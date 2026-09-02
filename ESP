@@ -1,0 +1,59 @@
+local ws = game:GetService("Workspace")
+local cam = ws.CurrentCamera
+
+local function ESPFunc()
+    local esp = Drawing.new("Text")
+    esp.Size = 13
+    esp.Font = Drawing.Fonts.Fortnite
+    esp.Center = true
+    esp.Outline = true
+    esp.Visible = false
+    esp.Color = Color3.fromRGB(255, 36, 0)
+    return esp
+end
+
+local islandalaha = {}
+
+local petyaeblan = ws:FindFirstChild("Islands")
+if petyaeblan then
+    for _, island in ipairs(petyaeblan:GetChildren()) do
+        local esp = ESPFunc()
+        esp.Text = island.Name or "Не остров эпштейна, траст"
+        islandalaha[island] = {obj = island, esp = esp}
+    end
+end
+
+task.spawn(function()
+    while true do
+        for island, data in pairs(islandalaha) do
+            if not island.Parent then
+                data.esp:Remove()
+                islandalaha[island] = nil
+            else
+                local posAttr = island:GetAttribute("islandPosition")
+                local position = nil
+                if posAttr and type(posAttr) == "table" and posAttr.x and posAttr.y and posAttr.z then
+                    position = Vector3.new(posAttr.x, posAttr.y, posAttr.z)
+                else
+                    local cfAttr = island:GetAttribute("islandCFrame")
+                    if cfAttr and type(cfAttr) == "table" and cfAttr.x and cfAttr.y and cfAttr.z then
+                        position = Vector3.new(cfAttr.x, cfAttr.y, cfAttr.z)
+                    end
+                end
+
+                if position then
+                    local screenPos, visible = WorldToScreen(position)
+                    if visible then
+                        data.esp.Visible = true
+                        data.esp.Position = screenPos
+                    else
+                        data.esp.Visible = false
+                    end
+                else
+                    data.esp.Visible = false
+                end
+            end
+        end
+        task.wait()
+    end
+end)
