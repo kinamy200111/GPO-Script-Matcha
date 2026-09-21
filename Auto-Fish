@@ -1,0 +1,918 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
+local WS = game:GetService("Workspace")
+local Camera = WS:FindFirstChild("Camera") or workspace.Camera
+local lp = Players.LocalPlayer
+
+_G.__GPO_FISH_EPOCH = (_G.__GPO_FISH_EPOCH or 0) + 1
+local myEpoch = _G.__GPO_FISH_EPOCH
+local function alive() return myEpoch == _G.__GPO_FISH_EPOCH end
+if _G.gpo_fish and _G.gpo_fish.stop then pcall(_G.gpo_fish.stop) end
+
+local st = {
+    on = false, charge = 0.9, biteTimeout = 90, miniTimeout = 60,
+    autoSell = false, sellEveryN = 5, autoShop = false,
+    buyBelow = 20, baitHave = nil,
+    casts = 0, catches = 0, soldAt = 0, shopping = false,
+    phase = "off", info = "equip rod + face water",
+}
+
+local function rod()
+    local ch = lp and lp.Character
+    if not ch then return nil end
+    for _, t in ipairs(ch:GetChildren()) do
+        if t.ClassName == "Tool" and t.Name:lower():find("rod") then return t end
+    end
+    return nil
+end
+
+local function hook()
+    local ef = WS:FindFirstChild("Effects")
+    if not ef or not lp then return nil end
+    return ef:FindFirstChild(lp.Name .. "'s hook")
+end
+
+local function hookCaught()
+    local h = hook()
+    if not h then return nil end
+    local ok, v = pcall(function() return h:GetAttribute("Caught") end)
+    if ok then return v end
+    return nil
+end
+
+local function gui(name)
+    local pg = lp and lp:FindFirstChild("PlayerGui")
+    return pg and pg:FindFirstChild(name)
+end
+
+local function btnCenter(b)
+    local ok, p, s = pcall(function() return b.AbsolutePosition, b.AbsoluteSize, b.Visible end)
+    if not ok or not p or not s then return nil end
+    return p.X + s.X / 2, p.Y + s.Y / 2
+end
+
+local mouseHeld = false
+local function hold(down)
+    if down and not mouseHeld then mouse1press() mouseHeld = true
+    elseif not down and mouseHeld then mouse1release() mouseHeld = false end
+end
+
+local function viewport()
+    local vs = Camera and Camera.ViewportSize
+    if vs then return vs.X, vs.Y end
+    return 1600, 900
+end
+local function clickable(b)
+    local ok, p, s = pcall(function() return b.AbsolutePosition, b.AbsoluteSize end)
+    if not ok or not p or not s then return false end
+    if s.X < 10 or s.Y < 5 then return false end
+    local vx, vy = viewport()
+    if p.X < -50 or p.Y < -50 or p.X > vx + 50 or p.Y > vy + 50 then return false end
+    return true
+end
+local function clickAt(x, y)
+    hold(false)
+    mousemoveabs(x, y)
+    task.wait(0.08)
+    mousemoverel(2, 0) task.wait(0.03)
+    mousemoverel(-2, 0) task.wait(0.05)
+    mouse1click()
+    task.wait(0.15)
+end
+local function tradeShopGui()
+    local pg = lp and lp:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    for _, g in ipairs(pg:GetChildren()) do
+        if g.Name == "Shop" and g.ClassName == "ScreenGui" then
+            local hasFrame = false
+            pcall(function() hasFrame = g:FindFirstChild("Frame") ~= nil end)
+            if hasFrame then return g end
+        end
+    end
+    return nil
+end
+local function finishDots()
+    local function inGui(g)
+        if not g then return end
+        pcall(function()
+            for _, o in ipairs(g:GetDescendants()) do
+                if o.ClassName == "TextButton" or o.ClassName == "ImageButton" then
+                    if tostring(o.Text or "") == "..." and clickable(o) then
+                        local x, y = btnCenter(o)
+                        print("[shop] dots @" .. math.floor(x) .. "," .. math.floor(y))
+                        clickAt(x, y) task.wait(0.4)
+                    end
+                end
+            end
+        end)
+    end
+    inGui(gui("NPCCHAT"))
+    inGui(tradeShopGui())
+end
+local function typeNumber(n)
+    local s = tostring(n)
+    for i = 1, #s do
+        local d = tonumber(s:sub(i, i))
+        if d then
+            pcall(function() keypress(0x30 + d) end)
+            task.wait(0.06)
+            pcall(function() keyrelease(0x30 + d) end)
+            task.wait(0.06)
+        end
+    end
+end
+
+local function screenCenter()
+    local vs = Camera and Camera.ViewportSize
+    if vs then return vs.X / 2, vs.Y / 2 end
+    return 400, 300
+end
+
+local FISH_SPOT = Vector3.new(-3769.73, 9.5, 309.27)
+local SHOP_SPOT = Vector3.new(-3657.26, 20.5, 299.77)
+local VK_E, VK_T = 0x45, 0x54
+
+local function tweenTp(pos, steps)
+    steps = steps or 12
+    local ch = lp and lp.Character
+    local root = ch and ch:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    local ok, start = pcall(function() return root.CFrame end)
+    if not ok or not start then return false end
+    local rot = start - start.Position
+    for i = 1, steps do
+        if not alive() then return false end
+        pcall(function()
+            root.CFrame = start:Lerp(CFrame.new(pos.X, pos.Y, pos.Z) * rot, i / steps)
+        end)
+        task.wait(0.06)
+    end
+    return true
+end
+
+local function pressKey(vk, holdTime)
+    hold(false)
+    pcall(function() keypress(vk) end)
+    task.wait(holdTime or 1.0)
+    pcall(function() keyrelease(vk) end)
+    task.wait(0.4)
+end
+
+local function baitCount()
+    local g = gui("FishingBaitGui")
+    if not g then return nil end
+    local n = nil
+    pcall(function()
+        for _, o in ipairs(g:GetDescendants()) do
+            if o.ClassName == "TextLabel" and o.Name == "ItemCount" then
+                local x = tostring(o.Text):match("x(%d+)")
+                if x then n = tonumber(x) end
+            end
+        end
+    end)
+    return n
+end
+
+local function dumpGui(g, tag, cap)
+    cap = cap or 100
+    print("[shop] " .. tag .. " present=" .. tostring(g ~= nil))
+    if not g then return end
+    local i = 0
+    pcall(function()
+        for _, o in ipairs(g:GetDescendants()) do
+            local c = o.ClassName
+            if c == "TextLabel" or c == "TextButton" or c == "ImageButton" or c == "TextBox" then
+                i = i + 1
+                if i > cap then print("[shop] ...truncated") break end
+                local t, pos, sz = "?", "?", "?"
+                pcall(function()
+                    t = tostring(o.Text)
+                    pos = tostring(o.AbsolutePosition)
+                    sz = tostring(o.AbsoluteSize)
+                end)
+                print("[shop] " .. o:GetFullName() .. "|" .. c .. "|text=" .. t:sub(1, 40) .. "|pos=" .. pos .. "|size=" .. sz)
+            end
+        end
+    end)
+end
+
+local function openShopGui(vk)
+    local pg = lp and lp:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local before = {}
+    for _, g in ipairs(pg:GetChildren()) do before[g.Name] = true end
+    pressKey(vk, 1.2)
+    task.wait(1.0)
+    local best = nil
+    for _, g in ipairs(pg:GetChildren()) do
+        if not before[g.Name] and g.ClassName == "ScreenGui" then best = g break end
+    end
+    if not best then
+        for _, g in ipairs(pg:GetChildren()) do
+            local ln = g.Name:lower()
+            if (ln:find("bait") or ln:find("buy") or ln:find("shop")) and g.Name ~= "FishingBaitGui" then best = g break end
+        end
+    end
+    return best
+end
+
+local function peli()
+    local pg = lp and lp:FindFirstChild("PlayerGui")
+    local hud = pg and pg:FindFirstChild("HUD")
+    local main = hud and hud:FindFirstChild("Main")
+    local box = main and main:FindFirstChild("Peli")
+    local lbl = box and box:FindFirstChild("TextLabel")
+    if not lbl then return nil end
+    local ok, s = pcall(function() return lbl.Text end)
+    if not ok then return nil end
+    return tonumber(tostring(s):gsub("[^%d]", ""))
+end
+
+local function dialogueText()
+    local g = gui("NPCCHAT")
+    if not g then return nil end
+    local parts = {}
+    pcall(function()
+        local d = g:FindFirstChild("Frame")
+        d = d and d:FindFirstChild("ImageLabel")
+        d = d and d:FindFirstChild("desc")
+        if not d then return end
+        for _, o in ipairs(d:GetDescendants()) do
+            if o.ClassName == "TextLabel" and o.Name:find("Group") and not o.Name:find("Char") then
+                local ok, t, x = pcall(function() return o.Text, o.AbsolutePosition.X end)
+                if ok and t and t ~= "" then parts[#parts + 1] = { t = t, x = x or 0 } end
+            end
+        end
+    end)
+    table.sort(parts, function(a, b) return a.x < b.x end)
+    local s = ""
+    for _, p in ipairs(parts) do s = s .. p.t .. " " end
+    return s
+end
+local function npcGoExpect(kw)
+    local txt = dialogueText()
+    print("[shop] dialogue: " .. tostring(txt and txt:sub(1, 130)))
+    if not txt or (kw and not txt:lower():find(kw)) then return false end
+    local g = gui("NPCCHAT")
+    if not g then return false end
+    local go = nil
+    pcall(function()
+        local fr = g:FindFirstChild("Frame")
+        go = fr and fr:FindFirstChild("go")
+    end)
+    if go and clickable(go) then
+        local x, y = btnCenter(go)
+        if x then clickAt(x, y) return true end
+    else
+        print("[shop] go not clickable")
+    end
+    return false
+end
+local function npcGo() return npcGoExpect(nil) end
+
+local function fishAmounts()
+    local m = {}
+    local g = gui("FishSellerGui")
+    if not g then return m end
+    pcall(function()
+        local list = g.Main.Items.List
+        for _, row in ipairs(list:GetChildren()) do
+            local nm, amt = nil, 0
+            for _, o in ipairs(row:GetDescendants()) do
+                if o.ClassName == "TextLabel" then
+                    if o.Name == "ItemName" then nm = tostring(o.Text) end
+                    if o.Name == "Amount" then
+                        local x = tostring(o.Text or ""):match("x(%d+)")
+                        if x then amt = tonumber(x) end
+                    end
+                end
+            end
+            if nm then m[nm] = amt end
+        end
+    end)
+    return m
+end
+local function confirmAccept()
+    local pg = lp and lp:FindFirstChild("PlayerGui")
+    local cp = pg and pg:FindFirstChild("ConfirmationPrompt")
+    if not cp then return false end
+    local acc = nil
+    pcall(function()
+        local main = cp:FindFirstChild("Main")
+        local of = main and main:FindFirstChild("OptionsFrame")
+        acc = of and of:FindFirstChild("Accept")
+    end)
+    if acc and clickable(acc) then
+        local x, y = btnCenter(acc)
+        if x then
+            print("[shop] confirm Accept @" .. math.floor(x) .. "," .. math.floor(y))
+            clickAt(x, y)
+            return true
+        end
+    end
+    return false
+end
+local function clickSellAlls()
+    local g = gui("FishSellerGui")
+    if not g then return 0 end
+    local done, stall = 0, 0
+    while alive() do
+        local btn, rowName, before = nil, nil, 0
+        pcall(function()
+            local list = g.Main.Items.List
+            for _, row in ipairs(list:GetChildren()) do
+                local amt = 0
+                for _, o in ipairs(row:GetDescendants()) do
+                    if o.ClassName == "TextLabel" and o.Name == "Amount" then
+                        local x = tostring(o.Text or ""):match("x(%d+)")
+                        if x then amt = tonumber(x) end
+                    end
+                end
+                if amt > 0 then
+                    for _, o in ipairs(row:GetChildren()) do
+                        if o.Name == "SellAll"
+                            and (o.ClassName == "TextButton" or o.ClassName == "ImageButton")
+                            and clickable(o) then
+                            btn, rowName, before = o, row.Name, amt break
+                        end
+                    end
+                    if btn then break end
+                end
+            end
+        end)
+        if not btn then break end
+        local x, y = btnCenter(btn)
+        if not x then break end
+        print("[shop] sell " .. rowName .. " x" .. before .. " @" .. math.floor(x) .. "," .. math.floor(y))
+        clickAt(x, y)
+        task.wait(1.0)
+        confirmAccept()
+        task.wait(0.8)
+        local after = fishAmounts()[rowName] or 0
+        done = done + 1
+        if after >= before then
+            stall = stall + 1
+            print("[shop] no sale progress (" .. rowName .. " still x" .. after .. ")")
+        else
+            stall = 0
+        end
+        if stall >= 3 or done > 40 then break end
+    end
+    return done
+end
+
+local BAIT_PRICE, BAIT_MAX = 45, 300
+local function dialogueOpen()
+    local g = gui("NPCCHAT")
+    if not g then return false end
+    local ok, w = pcall(function()
+        local fr = g:FindFirstChild("Frame")
+        local go = fr and fr:FindFirstChild("go")
+        return go and go.AbsoluteSize.X or 0
+    end)
+    return ok and w > 10
+end
+local function baitMaxFromDialog()
+    local g = gui("NPCCHAT")
+    if not g then return BAIT_MAX end
+    local parts = {}
+    pcall(function()
+        local d = g:FindFirstChild("Frame")
+        d = d and d:FindFirstChild("ImageLabel")
+        d = d and d:FindFirstChild("desc")
+        if not d then return end
+        for _, o in ipairs(d:GetDescendants()) do
+            if o.ClassName == "TextLabel" and o.Name:find("Group") then
+                local ok, t, x = pcall(function() return o.Text, o.AbsolutePosition.X end)
+                if ok and t and t ~= "" then parts[#parts + 1] = { t = t, x = x or 0 } end
+            end
+        end
+    end)
+    table.sort(parts, function(a, b) return a.x < b.x end)
+    local s = ""
+    for _, p in ipairs(parts) do s = s .. p.t .. " " end
+    local m = s:match("MAX:%s*(%d+)")
+    if m then return tonumber(m) end
+    return BAIT_MAX
+end
+local function closeDialog()
+    local g = gui("NPCCHAT")
+    if not g then return end
+    pcall(function()
+        local fr = g:FindFirstChild("Frame")
+        local ec = fr and fr:FindFirstChild("endChat")
+        if not ec then return end
+        local pos = ec.AbsolutePosition
+        if not pos or pos.X <= 0 then return end
+        ec.AbsoluteSize = Vector2.new(93, 23)
+    end)
+    task.wait(0.2)
+    local g2 = gui("NPCCHAT")
+    local ec2 = g2 and g2.Frame and g2.Frame:FindFirstChild("endChat")
+    if ec2 then
+        local x, y = btnCenter(ec2)
+        if x then clickAt(x, y) task.wait(0.4) end
+    end
+end
+local function shopQuantityBuy(need)
+    local g = tradeShopGui()
+    if not g then return false, "no trade shop" end
+    local box = nil
+    pcall(function()
+        for _, o in ipairs(g:GetDescendants()) do
+            if o.ClassName == "TextBox" then box = o break end
+        end
+    end)
+    if not box then return false, "no textbox" end
+    local x, y = btnCenter(box)
+    if not x then return false, "box not clickable" end
+    print("[shop] qty field @" .. math.floor(x) .. "," .. math.floor(y) .. " typing " .. need)
+    clickAt(x, y)
+    task.wait(0.3)
+    typeNumber(need)
+    task.wait(0.3)
+    local go = nil
+    pcall(function()
+        local fr = g:FindFirstChild("Frame")
+        go = fr and (fr:FindFirstChild("go") or fr:FindFirstChild("Go"))
+    end)
+    if go and clickable(go) then
+        local gx, gy = btnCenter(go)
+        clickAt(gx, gy)
+        return true, "qty entered"
+    end
+    return false, "no go in shop"
+end
+local function buyPageBox()
+    for _, g in ipairs({ gui("NPCCHAT"), tradeShopGui() }) do
+        if g then
+            local found = nil
+            pcall(function()
+                for _, o in ipairs(g:GetDescendants()) do
+                    if o.ClassName == "TextBox" then found = o break end
+                end
+            end)
+            if found then return found, g end
+        end
+    end
+    return nil, nil
+end
+local function boxText(b)
+    local ok, t = pcall(function() return b.Text end)
+    return ok and tostring(t) or nil
+end
+local function guiGo(g)
+    if not g then return nil end
+    local go = nil
+    pcall(function()
+        local fr = g:FindFirstChild("Frame")
+        go = fr and (fr:FindFirstChild("go") or fr:FindFirstChild("Go"))
+    end)
+    if go and clickable(go) then return go end
+    return nil
+end
+local function shopQty()
+    local sh = tradeShopGui()
+    local q = nil
+    pcall(function()
+        local fr = sh and sh:FindFirstChild("Frame")
+        local c = fr and fr:FindFirstChild("count")
+        local b = fr and fr:FindFirstChild("buy")
+        if fr and c and b then q = { fr = fr, count = c, buy = b, cancel = fr:FindFirstChild("cancel") } end
+    end)
+    return q
+end
+local function shopQtyText()
+    local sh = tradeShopGui()
+    if not sh then return nil, nil end
+    local parts = {}
+    pcall(function()
+        local d = sh:FindFirstChild("Frame")
+        d = d and d:FindFirstChild("ImageLabel")
+        d = d and d:FindFirstChild("desc")
+        if not d then return end
+        for _, o in ipairs(d:GetDescendants()) do
+            if o.ClassName == "TextLabel" and o.Name:find("Group") and not o.Name:find("Char") then
+                local ok, t, x = pcall(function() return o.Text, o.AbsolutePosition.X end)
+                if ok and t and t ~= "" then parts[#parts + 1] = { t = t, x = x or 0 } end
+            end
+        end
+    end)
+    table.sort(parts, function(a, b) return a.x < b.x end)
+    local s = ""
+    for _, p in ipairs(parts) do s = s .. p.t end
+    local m = s:match("MAX:%s*(%d+)")
+    return s, (m and tonumber(m) or nil)
+end
+local function fieldGuess(q)
+    local bx, by = btnCenter(q.buy)
+    if not bx then return nil end
+    if q.cancel then
+        local cx, cy = btnCenter(q.cancel)
+        if cx then return (bx + cx) / 2, (by + cy) / 2 end
+    end
+    return bx + 117, by
+end
+local function backspace()
+    pcall(function() keypress(0x08) end) task.wait(0.04)
+    pcall(function() keyrelease(0x08) end) task.wait(0.04)
+end
+local function pressEnter()
+    pcall(function() keypress(0x0D) end) task.wait(0.08)
+    pcall(function() keyrelease(0x0D) end) task.wait(0.08)
+end
+local function equipRod()
+    for t = 1, 3 do
+        if rod() then return true end
+        pcall(function() keypress(0x31) end) task.wait(0.1)
+        pcall(function() keyrelease(0x31) end) task.wait(0.6)
+    end
+    return rod() ~= nil
+end
+local function buyBaitInner(amount)
+    if not dialogueOpen() then pressKey(VK_E, 0.8) task.wait(0.8) end
+    local q = nil
+    for p = 1, 6 do
+        q = shopQty()
+        if q then print("[shop] qty page at step " .. p) break end
+        if not dialogueOpen() then pressKey(VK_E, 0.8) task.wait(0.8) end
+        npcGoExpect(nil)
+        task.wait(1.0)
+    end
+    if not q then closeDialog() finishDots() return baitCount() or 0, "no qty page" end
+    local txt, maxN = shopQtyText()
+    print("[shop] qty: " .. tostring(txt and txt:sub(1, 80)) .. " MAX=" .. tostring(maxN))
+    local money = peli()
+    local afford = money and math.floor(money / BAIT_PRICE) or 9999
+    local need = math.min(amount or 9999, maxN or 9999, afford)
+    print("[shop] need=" .. need .. " want=" .. tostring(amount) .. " peli=" .. tostring(money))
+    if need <= 0 then closeDialog() finishDots() return baitCount() or 0, "nothing to buy" end
+    local fx, fy = fieldGuess(q)
+    local filled = false
+    if fx then
+        print("[shop] field guess @" .. math.floor(fx) .. "," .. math.floor(fy))
+        local cur0 = boxText(q.count)
+        print("[shop] field before = " .. tostring(cur0))
+        if cur0 and cur0:match(tostring(need)) then
+            filled = true
+            print("[shop] field already correct, skip typing")
+        else
+            for t = 1, 2 do
+                clickAt(fx, fy) task.wait(0.6)
+                for i = 1, 12 do backspace() end
+                typeNumber(need) task.wait(0.3)
+                pressEnter() task.wait(0.4)
+                local back = boxText(q.count)
+                print("[shop] field try " .. t .. " = " .. tostring(back))
+                if back and back:match(tostring(need)) then filled = true break end
+                if back == nil then filled = true print("[shop] field unreadable, single input done") break end
+                fx = fx + (t == 1 and 35 or -70)
+            end
+        end
+    else
+        print("[shop] no buy pos, skip field")
+    end
+    local before = maxN
+    local bought, still = 0, 0
+    local clicks = math.min(math.max(need + 5, 8), 90)
+    for t = 1, clicks do
+        q = shopQty()
+        if not q then print("[shop] qty page gone") break end
+        local x, y = btnCenter(q.buy)
+        if not x then print("[shop] buy not clickable") break end
+        clickAt(x, y)
+        task.wait(1.2)
+        local _, now = shopQtyText()
+        if now and before and now < before then
+            bought = bought + (before - now)
+            before = now
+            still = 0
+            print("[shop] bought total=" .. bought .. " MAX=" .. now)
+        else
+            still = still + 1
+            print("[shop] buy click " .. t .. " no MAX change (still=" .. still .. ")")
+        end
+        if bought >= need then break end
+        if filled and t >= 3 then break end
+        if still >= 5 then break end
+    end
+    local _, finalMax = shopQtyText()
+    local have = baitCount() or (finalMax and (BAIT_MAX - finalMax)) or 0
+    print("[shop] bought=" .. bought .. "/" .. need .. " have~" .. have)
+    local q2 = shopQty()
+    if q2 and q2.cancel then
+        local x, y = btnCenter(q2.cancel)
+        if x then clickAt(x, y) task.wait(0.5) end
+    end
+    finishDots()
+    task.wait(0.5)
+    closeDialog()
+    task.wait(0.5)
+    return have, (bought >= need) and "ok-qty" or ("partial " .. bought .. "/" .. need)
+end
+local function buyBait(amount)
+    if st.buyBusy then print("[shop] buy already running, skip") return baitCount() or 0, "busy" end
+    st.buyBusy = true
+    local ok, r1, r2 = pcall(buyBaitInner, amount)
+    st.buyBusy = false
+    if ok then return r1, r2 end
+    print("[shop] buy error: " .. tostring(r1))
+    return baitCount() or 0, "error"
+end
+
+local function shopCycle(needBuy, needSell)
+    st.shopping = true hold(false)
+    st.phase = "shop" st.info = "tp shop"
+    print("[shop] cycle buy=" .. tostring(needBuy) .. " sell=" .. tostring(needSell))
+    tweenTp(SHOP_SPOT)
+    task.wait(0.5)
+    if needBuy then
+        st.info = "buying bait"
+        local ok, msg = buyBait(BAIT_MAX)
+        if type(ok) == "number" then st.baitHave = ok end
+        print("[shop] buy: " .. tostring(ok) .. " " .. tostring(msg))
+    end
+    if needSell then
+        st.info = "selling"
+        pressKey(VK_T, 0.8)
+        task.wait(1.0)
+        npcGoExpect("fish")
+        task.wait(1.2)
+        local n = clickSellAlls()
+        print("[shop] sold buttons=" .. n)
+        finishDots()
+        closeDialog()
+        st.soldAt = st.catches
+    end
+    st.info = "tp back"
+    tweenTp(FISH_SPOT)
+    task.wait(0.3)
+    print("[shop] rod equipped=" .. tostring(equipRod()))
+    st.shopping = false
+end
+
+local function miniHold()
+    local bill = gui("FishingUIBill")
+    if not bill then return nil end
+    local okF, fr = pcall(function() return bill.Frame end)
+    if not okF or not fr then return nil end
+    local ok, p, g, fpos, fsize = pcall(function()
+        return fr:FindFirstChild("Player"), fr:FindFirstChild("Goal"),
+               fr.AbsolutePosition, fr.AbsoluteSize
+    end)
+    if ok and p and g and fpos and fsize and fsize.Y > 0 then
+        local ok2, pp, ps, gp, gs = pcall(function()
+            return p.AbsolutePosition, p.AbsoluteSize, g.AbsolutePosition, g.AbsoluteSize
+        end)
+        if ok2 then
+            local barY = (pp.Y + ps.Y / 2 - fpos.Y) / fsize.Y
+            local fishY = (gp.Y + gs.Y / 2 - fpos.Y) / fsize.Y
+            if fishY < barY - 0.02 then return true end
+            if fishY > barY + 0.02 then return false end
+            return nil
+        end
+    end
+    local it = fr:FindFirstChild("InfoText")
+    if it then
+        local ok3, t = pcall(function() return it.Text end)
+        if ok3 then
+            if t == "HOLD CLICK" then return true end
+            if t == "RELEASE CLICK" then return false end
+        end
+    end
+    return nil
+end
+
+
+local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/neaxusxgod-png/INS-ui/main/uilib.min.lua"))() or INSUI
+local win = Lib:CreateWindow({ title = "GPO Auto-Fish", subtitle = "v4", size = Vector2.new(560, 480), menuKey = "p" })
+win:AddSettingsTab("gear")
+local tab = win:Tab("Fish", "anchor")
+local sec = tab:Section("Auto Fish", "Left")
+sec:Toggle("Enabled", false, function(on)
+    st.on = on
+    if not on then hold(false) st.phase = "off" st.info = "stopped" end
+end)
+sec:Slider("Charge time", st.charge, 0.05, 0.2, 1.5, "s", function(v) st.charge = v end)
+sec:Toggle("Auto Sell All", false, function(on) st.autoSell = on end)
+
+local shopT = win:Tab("Shop", "cart")
+local sS = shopT:Section("Travel & Trade", "Left")
+sS:Toggle("Auto-Buy/Sell", false, function(on) st.autoShop = on st.autoSell = on end)
+sS:Slider("Buy when bait <", st.buyBelow, 1, 0, 290, "", function(v) st.buyBelow = v end)
+sS:Slider("Sell every N catches", st.sellEveryN, 5, 1, 50, "", function(v) st.sellEveryN = v end)
+sS:Button("TP: fish spot", function() tweenTp(FISH_SPOT) end)
+ :AddButton("TP: shop", function() tweenTp(SHOP_SPOT) end)
+sS:Button("Buy bait now", function()
+    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(SHOP_SPOT) task.wait(0.5)
+        local ok, msg = buyBait(BAIT_MAX) if type(ok) == "number" then st.baitHave = ok end print("[shop] buy: " .. tostring(ok) .. " " .. tostring(msg))
+        tweenTp(FISH_SPOT) task.wait(0.3) print("[shop] rod equipped=" .. tostring(equipRod())) st.shopping = false end)
+end)
+ :AddButton("Sell now", function()
+    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(SHOP_SPOT) task.wait(0.5)
+        pressKey(VK_T, 0.8) task.wait(1.0)
+        npcGoExpect("fish") task.wait(1.2)
+        print("[shop] sold=" .. clickSellAlls()) st.soldAt = st.catches
+        finishDots() closeDialog()
+        tweenTp(FISH_SPOT) task.wait(0.3) print("[shop] rod equipped=" .. tostring(equipRod())) st.shopping = false end)
+end)
+
+local function aimPoint()
+    local vs = Camera and Camera.ViewportSize
+    if not vs then return nil end
+    return math.floor(vs.X / 2), math.floor(vs.Y / 2 - vs.Y * 0.1)
+end
+if _G.GPO_AF_DRAW then
+    for _, d in ipairs(_G.GPO_AF_DRAW) do pcall(function() d:Remove() end) end
+    _G.GPO_AF_DRAW = nil
+end
+if _G.GPO_AF_MCONN then pcall(function() _G.GPO_AF_MCONN:Disconnect() end) _G.GPO_AF_MCONN = nil end
+local _draw = {}
+local aimBox = Drawing.new("Square")
+aimBox.Size = Vector2.new(14, 14)
+aimBox.Color = Color3.fromRGB(80, 255, 80)
+aimBox.Thickness = 2
+aimBox.Filled = false
+aimBox.Visible = false
+_draw[#_draw + 1] = aimBox
+local spotMk = {}
+for _, s in ipairs({
+    { p = FISH_SPOT, n = "FISH", c = Color3.fromRGB(80, 255, 80) },
+    { p = SHOP_SPOT, n = "SHOP", c = Color3.fromRGB(255, 200, 60) },
+}) do
+    local c = Drawing.new("Circle")
+    c.Radius = 14
+    c.Color = s.c
+    c.Thickness = 2
+    c.Filled = false
+    c.Visible = false
+    local t = Drawing.new("Text")
+    t.Text = s.n
+    t.Size = 14
+    t.Center = true
+    t.Outline = true
+    t.Color = s.c
+    t.Visible = false
+    _draw[#_draw + 1] = c
+    _draw[#_draw + 1] = t
+    spotMk[#spotMk + 1] = { c = c, t = t, p = s.p, n = s.n }
+end
+_G.GPO_AF_DRAW = _draw
+_G.GPO_AF_MCONN = RunService.RenderStepped:Connect(function()
+    if not alive() then return end
+    local ax, ay = aimPoint()
+    if ax and st.on and not st.shopping then
+        aimBox.Position = Vector2.new(ax - 7, ay - 7)
+        aimBox.Visible = true
+    else
+        aimBox.Visible = false
+    end
+    local camP = nil
+    pcall(function() camP = Camera.Position end)
+    for _, m in ipairs(spotMk) do
+        local sp, vis = WorldToScreen(m.p)
+        if vis then
+            m.c.Position = sp
+            m.c.Visible = true
+            local dist = ""
+            if camP then
+                local ok, d = pcall(function() return (camP - m.p).Magnitude end)
+                if ok and d then dist = " " .. math.floor(d) .. "m" end
+            end
+            m.t.Text = m.n .. dist
+            m.t.Position = Vector2.new(sp.X, sp.Y - 30)
+            m.t.Visible = true
+        else
+            m.c.Visible = false
+            m.t.Visible = false
+        end
+    end
+end)
+
+task.spawn(function()
+    while alive() do
+        task.wait(0.2)
+        if not st.on then hold(false) task.wait(0.3) continue end
+        if st.shopping then hold(false) task.wait(0.5) continue end
+        if st.autoShop then
+            local b = baitCount() or st.baitHave
+            local needBuy = (b ~= nil and b < st.buyBelow)
+            local needSell = st.autoSell and (st.catches - st.soldAt >= st.sellEveryN)
+            if needBuy or needSell then shopCycle(needBuy, needSell) continue end
+        end
+        local ok, err = pcall(function()
+            local r = rod()
+            if not r then st.phase = "wait" st.info = "equip the rod" return end
+            local h = hook()
+            if not h then
+                st.phase = "cast"
+                st.info = "charging"
+                local ax, ay = aimPoint()
+                if ax then
+                    mousemoveabs(ax, ay) task.wait(0.15)
+                    mousemoverel(2, 0) task.wait(0.03)
+                    mousemoverel(-2, 0) task.wait(0.05)
+                end
+                hold(true)
+                task.wait(st.charge)
+                hold(false)
+                st.casts = st.casts + 1
+                if st.baitHave then st.baitHave = math.max(0, st.baitHave - 1) end
+                local t0 = tick()
+                while alive() and st.on and tick() - t0 < 6 do
+                    if hook() then break end
+                    task.wait(0.2)
+                end
+                if not hook() then st.info = "cast failed (move? air?)" end
+                return
+            end
+            if hookCaught() then
+                st.phase = "minigame" st.info = "reeling"
+                local t0 = tick()
+                local lastF, lastT, fishV = nil, nil, 0
+                local lastB, lastT2, markV = nil, nil, 0
+                local PREDICT = 0.12
+                local mconn
+                mconn = RunService.RenderStepped:Connect(function()
+                    if not (alive() and st.on and hook()) then return end
+                    local now = tick()
+                    local bill = gui("FishingUIBill")
+                    local fr = bill and bill.Frame
+                    if not fr then return end
+                    local ok, p, g, fpos, fsize = pcall(function()
+                        return fr:FindFirstChild("Player"), fr:FindFirstChild("Goal"),
+                               fr.AbsolutePosition, fr.AbsoluteSize
+                    end)
+                    if not (ok and p and g and fsize and fsize.Y > 0) then
+                        local h = miniHold()
+                        if h ~= nil then hold(h) end
+                        return
+                    end
+                    local ok2, pp, ps, gp, gs = pcall(function()
+                        return p.AbsolutePosition, p.AbsoluteSize, g.AbsolutePosition, g.AbsoluteSize
+                    end)
+                    if not ok2 then return end
+                    local barY = (pp.Y + ps.Y / 2 - fpos.Y) / fsize.Y
+                    local fishY = (gp.Y + gs.Y / 2 - fpos.Y) / fsize.Y
+                    if lastF and lastT then
+                        local dt = now - lastT
+                        if dt > 0.001 and dt < 0.5 then
+                            local v = (fishY - lastF) / dt
+                            fishV = fishV * 0.7 + math.clamp(v, -3, 3) * 0.3
+                        end
+                    end
+                    lastF, lastT = fishY, now
+                    if lastB then
+                        local dt2 = now - lastT2
+                        if dt2 > 0.001 and dt2 < 0.5 then
+                            local mv = (barY - lastB) / dt2
+                            markV = markV * 0.7 + math.clamp(mv, -3, 3) * 0.3
+                        end
+                    end
+                    lastB, lastT2 = barY, now
+                    local target = fishY + fishV * PREDICT
+                    local des = math.clamp(3.0 * (target - barY), -1.2, 1.2)
+                    if markV > des + 0.05 then hold(true)
+                    elseif markV < des - 0.05 then hold(false) end
+                    st.info = string.format("err %.3f", math.abs(fishY - barY))
+                end)
+                while alive() and st.on and hook() and tick() - t0 < st.miniTimeout do
+                    task.wait(0.1)
+                end
+                pcall(function() mconn:Disconnect() end)
+                hold(false)
+                if not hook() then st.catches = st.catches + 1 st.info = "caught!" end
+                return
+            end
+            st.phase = "wait-bite" st.info = "waiting for bite..."
+            if tick() - (st.castT or tick()) > st.biteTimeout then
+                st.info = "bite timeout, recast"
+                local cx, cy = screenCenter()
+                clickAt(cx, cy)
+            end
+        end)
+        if not ok then st.info = "err: " .. tostring(err):sub(1, 60) end
+    end
+end)
+
+task.spawn(function()
+    local had = false
+    while alive() do
+        task.wait(0.5)
+        local has = hook() ~= nil
+        if has and not had then st.castT = tick() end
+        had = has
+    end
+end)
+
+_G.gpo_fish = { stop = function()
+    _G.__GPO_FISH_EPOCH = _G.__GPO_FISH_EPOCH + 1
+    hold(false)
+    if _G.GPO_AF_MCONN then pcall(function() _G.GPO_AF_MCONN:Disconnect() end) _G.GPO_AF_MCONN = nil end
+    if _G.GPO_AF_DRAW then for _, d in ipairs(_G.GPO_AF_DRAW) do pcall(function() d:Remove() end) end _G.GPO_AF_DRAW = nil end
+    pcall(function() win:Destroy() end)
+    print("[gpo-fish] stopped")
+end }
+Lib:Notify("Auto-Fish", "v4 loaded", 2, "success")
+print("[gpo-fish] v4 loaded — equip rod, enable")
