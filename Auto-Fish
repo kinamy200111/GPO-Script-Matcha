@@ -18,6 +18,7 @@ local st = {
     phase = "off", info = "equip rod + face water",
 }
 
+
 local function rod()
     local ch = lp and lp.Character
     if not ch then return nil end
@@ -63,6 +64,7 @@ local function viewport()
     if vs then return vs.X, vs.Y end
     return 1600, 900
 end
+
 local function clickable(b)
     local ok, p, s = pcall(function() return b.AbsolutePosition, b.AbsoluteSize end)
     if not ok or not p or not s then return false end
@@ -80,6 +82,7 @@ local function clickAt(x, y)
     mouse1click()
     task.wait(0.15)
 end
+
 local function tradeShopGui()
     local pg = lp and lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
@@ -92,6 +95,7 @@ local function tradeShopGui()
     end
     return nil
 end
+
 local function finishDots()
     local function inGui(g)
         if not g then return end
@@ -110,6 +114,7 @@ local function finishDots()
     inGui(gui("NPCCHAT"))
     inGui(tradeShopGui())
 end
+
 local function typeNumber(n)
     local s = tostring(n)
     for i = 1, #s do
@@ -129,8 +134,10 @@ local function screenCenter()
     return 400, 300
 end
 
-local FISH_SPOT = Vector3.new(-3769.73, 9.5, 309.27)
-local SHOP_SPOT = Vector3.new(-3657.26, 20.5, 299.77)
+
+local FISH_SPOT = Vector3.new(86.60527801513672, 9.615623474121094, -56.0518913269043)
+local BAIT_SPOT = Vector3.new(105.48043060302734, 9.615623474121094, -54.64692306518555)
+local SELL_SPOT = Vector3.new(94.81517028808594, 9.615623474121094, -54.5675048828125)
 local VK_E, VK_T = 0x45, 0x54
 
 local function tweenTp(pos, steps)
@@ -158,6 +165,7 @@ local function pressKey(vk, holdTime)
     pcall(function() keyrelease(vk) end)
     task.wait(0.4)
 end
+
 
 local function baitCount()
     local g = gui("FishingBaitGui")
@@ -197,6 +205,7 @@ local function dumpGui(g, tag, cap)
     end)
 end
 
+
 local function openShopGui(vk)
     local pg = lp and lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
@@ -229,6 +238,7 @@ local function peli()
     return tonumber(tostring(s):gsub("[^%d]", ""))
 end
 
+
 local function dialogueText()
     local g = gui("NPCCHAT")
     if not g then return nil end
@@ -250,6 +260,7 @@ local function dialogueText()
     for _, p in ipairs(parts) do s = s .. p.t .. " " end
     return s
 end
+
 local function npcGoExpect(kw)
     local txt = dialogueText()
     print("[shop] dialogue: " .. tostring(txt and txt:sub(1, 130)))
@@ -270,6 +281,8 @@ local function npcGoExpect(kw)
     return false
 end
 local function npcGo() return npcGoExpect(nil) end
+
+
 
 local function fishAmounts()
     local m = {}
@@ -293,6 +306,7 @@ local function fishAmounts()
     end)
     return m
 end
+
 local function confirmAccept()
     local pg = lp and lp:FindFirstChild("PlayerGui")
     local cp = pg and pg:FindFirstChild("ConfirmationPrompt")
@@ -362,6 +376,7 @@ local function clickSellAlls()
     return done
 end
 
+
 local BAIT_PRICE, BAIT_MAX = 45, 300
 local function dialogueOpen()
     local g = gui("NPCCHAT")
@@ -396,6 +411,7 @@ local function baitMaxFromDialog()
     if m then return tonumber(m) end
     return BAIT_MAX
 end
+
 local function closeDialog()
     local g = gui("NPCCHAT")
     if not g then return end
@@ -415,6 +431,7 @@ local function closeDialog()
         if x then clickAt(x, y) task.wait(0.4) end
     end
 end
+
 local function shopQuantityBuy(need)
     local g = tradeShopGui()
     if not g then return false, "no trade shop" end
@@ -472,6 +489,7 @@ local function guiGo(g)
     if go and clickable(go) then return go end
     return nil
 end
+
 local function shopQty()
     local sh = tradeShopGui()
     local q = nil
@@ -483,6 +501,7 @@ local function shopQty()
     end)
     return q
 end
+
 local function shopQtyText()
     local sh = tradeShopGui()
     if not sh then return nil, nil end
@@ -505,6 +524,7 @@ local function shopQtyText()
     local m = s:match("MAX:%s*(%d+)")
     return s, (m and tonumber(m) or nil)
 end
+
 local function fieldGuess(q)
     local bx, by = btnCenter(q.buy)
     if not bx then return nil end
@@ -522,6 +542,7 @@ local function pressEnter()
     pcall(function() keypress(0x0D) end) task.wait(0.08)
     pcall(function() keyrelease(0x0D) end) task.wait(0.08)
 end
+
 local function equipRod()
     for t = 1, 3 do
         if rod() then return true end
@@ -548,6 +569,7 @@ local function buyBaitInner(amount)
     local need = math.min(amount or 9999, maxN or 9999, afford)
     print("[shop] need=" .. need .. " want=" .. tostring(amount) .. " peli=" .. tostring(money))
     if need <= 0 then closeDialog() finishDots() return baitCount() or 0, "nothing to buy" end
+
     local fx, fy = fieldGuess(q)
     local filled = false
     if fx then
@@ -573,6 +595,7 @@ local function buyBaitInner(amount)
     else
         print("[shop] no buy pos, skip field")
     end
+
     local before = maxN
     local bought, still = 0, 0
     local clicks = math.min(math.max(need + 5, 8), 90)
@@ -611,6 +634,7 @@ local function buyBaitInner(amount)
     task.wait(0.5)
     return have, (bought >= need) and "ok-qty" or ("partial " .. bought .. "/" .. need)
 end
+
 local function buyBait(amount)
     if st.buyBusy then print("[shop] buy already running, skip") return baitCount() or 0, "busy" end
     st.buyBusy = true
@@ -621,19 +645,43 @@ local function buyBait(amount)
     return baitCount() or 0, "error"
 end
 
+local function closeFishGui()
+    local g = gui("FishSellerGui")
+    if not g then return false end
+    local hit = false
+    pcall(function()
+        for _, o in ipairs(g:GetDescendants()) do
+            local c = o.ClassName
+            if c == "TextButton" or c == "ImageButton" then
+                local nm = tostring(o.Name or ""):lower()
+                if nm:find("close") or nm == "x" or nm:find("exit") or nm:find("cancel") then
+                    if clickable(o) then
+                        local x, y = btnCenter(o)
+                        if x then clickAt(x, y) task.wait(0.4) hit = true end
+                    end
+                end
+            end
+        end
+    end)
+    return hit
+end
 local function shopCycle(needBuy, needSell)
     st.shopping = true hold(false)
     st.phase = "shop" st.info = "tp shop"
     print("[shop] cycle buy=" .. tostring(needBuy) .. " sell=" .. tostring(needSell))
-    tweenTp(SHOP_SPOT)
-    task.wait(0.5)
     if needBuy then
+        st.info = "tp bait"
+        tweenTp(BAIT_SPOT)
+        task.wait(0.5)
         st.info = "buying bait"
         local ok, msg = buyBait(BAIT_MAX)
         if type(ok) == "number" then st.baitHave = ok end
         print("[shop] buy: " .. tostring(ok) .. " " .. tostring(msg))
     end
     if needSell then
+        st.info = "tp sell"
+        tweenTp(SELL_SPOT)
+        task.wait(0.5)
         st.info = "selling"
         pressKey(VK_T, 0.8)
         task.wait(1.0)
@@ -643,6 +691,7 @@ local function shopCycle(needBuy, needSell)
         print("[shop] sold buttons=" .. n)
         finishDots()
         closeDialog()
+        closeFishGui()
         st.soldAt = st.catches
     end
     st.info = "tp back"
@@ -651,6 +700,9 @@ local function shopCycle(needBuy, needSell)
     print("[shop] rod equipped=" .. tostring(equipRod()))
     st.shopping = false
 end
+
+
+
 
 local function miniHold()
     local bill = gui("FishingUIBill")
@@ -703,26 +755,31 @@ sS:Toggle("Auto-Buy/Sell", false, function(on) st.autoShop = on st.autoSell = on
 sS:Slider("Buy when bait <", st.buyBelow, 1, 0, 290, "", function(v) st.buyBelow = v end)
 sS:Slider("Sell every N catches", st.sellEveryN, 5, 1, 50, "", function(v) st.sellEveryN = v end)
 sS:Button("TP: fish spot", function() tweenTp(FISH_SPOT) end)
- :AddButton("TP: shop", function() tweenTp(SHOP_SPOT) end)
+ :AddButton("TP: bait", function() tweenTp(BAIT_SPOT) end)
+ :AddButton("TP: sell", function() tweenTp(SELL_SPOT) end)
 sS:Button("Buy bait now", function()
-    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(SHOP_SPOT) task.wait(0.5)
+    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(BAIT_SPOT) task.wait(0.5)
         local ok, msg = buyBait(BAIT_MAX) if type(ok) == "number" then st.baitHave = ok end print("[shop] buy: " .. tostring(ok) .. " " .. tostring(msg))
         tweenTp(FISH_SPOT) task.wait(0.3) print("[shop] rod equipped=" .. tostring(equipRod())) st.shopping = false end)
 end)
  :AddButton("Sell now", function()
-    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(SHOP_SPOT) task.wait(0.5)
+    task.spawn(function() if st.shopping then print("[shop] busy, skip") return end st.shopping = true hold(false) tweenTp(SELL_SPOT) task.wait(0.5)
         pressKey(VK_T, 0.8) task.wait(1.0)
         npcGoExpect("fish") task.wait(1.2)
         print("[shop] sold=" .. clickSellAlls()) st.soldAt = st.catches
-        finishDots() closeDialog()
+        finishDots() closeDialog() closeFishGui()
         tweenTp(FISH_SPOT) task.wait(0.3) print("[shop] rod equipped=" .. tostring(equipRod())) st.shopping = false end)
 end)
+
+
+
 
 local function aimPoint()
     local vs = Camera and Camera.ViewportSize
     if not vs then return nil end
     return math.floor(vs.X / 2), math.floor(vs.Y / 2 - vs.Y * 0.1)
 end
+
 if _G.GPO_AF_DRAW then
     for _, d in ipairs(_G.GPO_AF_DRAW) do pcall(function() d:Remove() end) end
     _G.GPO_AF_DRAW = nil
@@ -739,7 +796,8 @@ _draw[#_draw + 1] = aimBox
 local spotMk = {}
 for _, s in ipairs({
     { p = FISH_SPOT, n = "FISH", c = Color3.fromRGB(80, 255, 80) },
-    { p = SHOP_SPOT, n = "SHOP", c = Color3.fromRGB(255, 200, 60) },
+    { p = BAIT_SPOT, n = "BAIT", c = Color3.fromRGB(255, 200, 60) },
+    { p = SELL_SPOT, n = "SELL", c = Color3.fromRGB(255, 120, 120) },
 }) do
     local c = Drawing.new("Circle")
     c.Radius = 14
@@ -790,6 +848,7 @@ _G.GPO_AF_MCONN = RunService.RenderStepped:Connect(function()
     end
 end)
 
+
 task.spawn(function()
     while alive() do
         task.wait(0.2)
@@ -806,6 +865,7 @@ task.spawn(function()
             if not r then st.phase = "wait" st.info = "equip the rod" return end
             local h = hook()
             if not h then
+
                 st.phase = "cast"
                 st.info = "charging"
                 local ax, ay = aimPoint()
@@ -828,6 +888,7 @@ task.spawn(function()
                 return
             end
             if hookCaught() then
+
                 st.phase = "minigame" st.info = "reeling"
                 local t0 = tick()
                 local lastF, lastT, fishV = nil, nil, 0
@@ -871,6 +932,7 @@ task.spawn(function()
                         end
                     end
                     lastB, lastT2 = barY, now
+
                     local target = fishY + fishV * PREDICT
                     local des = math.clamp(3.0 * (target - barY), -1.2, 1.2)
                     if markV > des + 0.05 then hold(true)
@@ -895,6 +957,7 @@ task.spawn(function()
         if not ok then st.info = "err: " .. tostring(err):sub(1, 60) end
     end
 end)
+
 
 task.spawn(function()
     local had = false
