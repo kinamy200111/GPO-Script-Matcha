@@ -12,7 +12,7 @@ if _G.gpo_fish and _G.gpo_fish.stop then pcall(_G.gpo_fish.stop) end
 
 local st = {
     on = false, charge = 0.9, biteTimeout = 90, miniTimeout = 60,
-    autoSell = false, sellEveryN = 5, autoShop = false,
+    autoSell = false, sellEveryN = 5, autoBuy = false,
     buyBelow = 20, baitHave = nil,
     casts = 0, catches = 0, soldAt = 0, shopping = false,
     phase = "off", info = "equip rod + face water",
@@ -747,12 +747,12 @@ sec:Toggle("Enabled", false, function(on)
     if not on then hold(false) st.phase = "off" st.info = "stopped" end
 end)
 sec:Slider("Charge time", st.charge, 0.05, 0.2, 1.5, "s", function(v) st.charge = v end)
-sec:Toggle("Auto Sell All", false, function(on) st.autoSell = on end)
 
 local shopT = win:Tab("Shop", "cart")
 local sS = shopT:Section("Travel & Trade", "Left")
-sS:Toggle("Auto-Buy/Sell", false, function(on) st.autoShop = on st.autoSell = on end)
+sS:Toggle("Auto-Buy", false, function(on) st.autoBuy = on end)
 sS:Slider("Buy when bait <", st.buyBelow, 1, 0, 290, "", function(v) st.buyBelow = v end)
+sS:Toggle("Auto-Sell", false, function(on) st.autoSell = on end)
 sS:Slider("Sell every N catches", st.sellEveryN, 5, 1, 50, "", function(v) st.sellEveryN = v end)
 sS:Button("TP: fish spot", function() tweenTp(FISH_SPOT) end)
  :AddButton("TP: bait", function() tweenTp(BAIT_SPOT) end)
@@ -854,9 +854,9 @@ task.spawn(function()
         task.wait(0.2)
         if not st.on then hold(false) task.wait(0.3) continue end
         if st.shopping then hold(false) task.wait(0.5) continue end
-        if st.autoShop then
+        if st.autoBuy or st.autoSell then
             local b = baitCount() or st.baitHave
-            local needBuy = (b ~= nil and b < st.buyBelow)
+            local needBuy = st.autoBuy and (b ~= nil and b < st.buyBelow)
             local needSell = st.autoSell and (st.catches - st.soldAt >= st.sellEveryN)
             if needBuy or needSell then shopCycle(needBuy, needSell) continue end
         end
